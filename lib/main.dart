@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // Added for channel creation
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'call_screen.dart';
 import 'notification_service.dart';
 
@@ -14,9 +14,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
 
-  // 🔥 THE FIX: Explicitly create the notification channel before starting the service
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'call_channel', // This matches the ID we use in the background service
+    'call_channel',
     'Call Channel',
     description: 'Incoming call style notifications',
     importance: Importance.max,
@@ -35,7 +34,6 @@ void main() async {
   runApp(RemindCallApp());
 }
 
-// Phase 1: Basic Background Service Setup
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
   await service.configure(
@@ -43,11 +41,10 @@ Future<void> initializeBackgroundService() async {
       onStart: onStart,
       autoStart: true,
       isForegroundMode: true,
-      notificationChannelId:
-          'call_channel', // It will now find the channel we just created!
-      initialNotificationTitle: 'Callminder is active',
+      notificationChannelId: 'call_channel',
+      initialNotificationTitle: 'Callminder Shield Active',
       initialNotificationContent:
-          'Running in background to ensure you never miss a task.',
+          'Running in the background. Ready to wake up.',
       foregroundServiceNotificationId: 888,
     ),
     iosConfiguration: IosConfiguration(
@@ -60,7 +57,7 @@ Future<void> initializeBackgroundService() async {
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // Background logic goes here
+  // Background processes run here
 }
 
 @pragma('vm:entry-point')
@@ -177,21 +174,52 @@ class CallTask {
   String task;
   DateTime dateTime;
   int snooze;
+  String repeatMode;
+  List<int> customDays;
 
-  CallTask(this.task, this.dateTime, this.snooze);
+  CallTask(
+    this.task,
+    this.dateTime,
+    this.snooze,
+    this.repeatMode,
+    this.customDays,
+  );
 
   Map<String, dynamic> toJson() => {
     "task": task,
     "dateTime": dateTime.toIso8601String(),
     "snooze": snooze,
+    "repeatMode": repeatMode,
+    "customDays": customDays,
   };
 
   factory CallTask.fromJson(Map<String, dynamic> json) {
     return CallTask(
       json["task"],
       DateTime.parse(json["dateTime"]),
-      json["snooze"],
+      json["snooze"] ?? 0,
+      json["repeatMode"] ?? 'none',
+      List<int>.from(json["customDays"] ?? []),
     );
+  }
+
+  DateTime calculateNextTime() {
+    DateTime now = DateTime.now();
+    DateTime next = dateTime;
+
+    if (repeatMode == 'daily') {
+      next = next.add(Duration(days: 1));
+      while (next.isBefore(now)) next = next.add(Duration(days: 1));
+    } else if (repeatMode == 'weekly') {
+      next = next.add(Duration(days: 7));
+      while (next.isBefore(now)) next = next.add(Duration(days: 7));
+    } else if (repeatMode == 'custom' && customDays.isNotEmpty) {
+      next = next.add(Duration(days: 1));
+      while (next.isBefore(now) || !customDays.contains(next.weekday)) {
+        next = next.add(Duration(days: 1));
+      }
+    }
+    return next;
   }
 }
 
@@ -223,38 +251,34 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     loadTasks();
     loadProfileImage();
+    checkInitialLaunch(); // 🔥 THE FIX: Checks if the app was just woken up!
+
+    NotificationService.selectNotificationStream.stream.listen((
+      String? payload,
+    ) {
+      if (payload != null && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => CallScreen(payload: payload)),
+        ).then((_) => loadTasks());
+      }
+    });
+  }
+
+  void checkInitialLaunch() async {
+    String? payload = await NotificationService.checkInitialLaunch();
+    if (payload != null && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => CallScreen(payload: payload)),
+      ).then((_) => loadTasks());
+    }
   }
 
   void loadProfileImage() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       profileImagePath = prefs.getString("profile_image");
-    });
-  }
-
-  void triggerCall(CallTask task) {
-    final diff = task.dateTime.difference(DateTime.now());
-
-    if (diff.isNegative) return;
-
-    Future.delayed(diff, () {
-      if (!mounted) return;
-
-      setState(() {
-        tasks.removeWhere(
-          (t) => t.task == task.task && t.dateTime == task.dateTime,
-        );
-      });
-
-      saveTasks();
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) =>
-              CallScreen(task: task.task, snoozeMinutes: task.snooze),
-        ),
-      );
     });
   }
 
@@ -291,7 +315,9 @@ class _HomeScreenState extends State<HomeScreen> {
     TimeOfDay? time = existing != null
         ? TimeOfDay.fromDateTime(existing.dateTime)
         : null;
-    int snooze = existing?.snooze ?? 5;
+
+    String repeatMode = existing?.repeatMode ?? 'none';
+    List<int> customDays = List.from(existing?.customDays ?? []);
 
     await showModalBottomSheet(
       context: context,
@@ -344,16 +370,62 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
 
-                  DropdownButton<int>(
-                    value: snooze,
-                    items: [5, 10, 15, 30].map((e) {
-                      return DropdownMenuItem(
-                        value: e,
-                        child: Text("$e min snooze"),
-                      );
-                    }).toList(),
-                    onChanged: (v) => setStateSheet(() => snooze = v!),
+                  ListTile(
+                    title: Text("Repeat"),
+                    trailing: DropdownButton<String>(
+                      value: repeatMode,
+                      items: [
+                        DropdownMenuItem(value: 'none', child: Text("Never")),
+                        DropdownMenuItem(
+                          value: 'daily',
+                          child: Text("Every Day"),
+                        ),
+                        DropdownMenuItem(
+                          value: 'weekly',
+                          child: Text("Every Week"),
+                        ),
+                        DropdownMenuItem(
+                          value: 'custom',
+                          child: Text("Custom Days"),
+                        ),
+                      ],
+                      onChanged: (v) => setStateSheet(() => repeatMode = v!),
+                    ),
                   ),
+
+                  if (repeatMode == 'custom')
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Wrap(
+                        spacing: 8,
+                        children: List.generate(7, (index) {
+                          int day = index + 1; // 1 = Monday, 7 = Sunday
+                          List<String> dayNames = [
+                            "M",
+                            "T",
+                            "W",
+                            "T",
+                            "F",
+                            "S",
+                            "S",
+                          ];
+                          bool isSelected = customDays.contains(day);
+                          return FilterChip(
+                            label: Text(dayNames[index]),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setStateSheet(() {
+                                if (selected) {
+                                  customDays.add(day);
+                                } else {
+                                  customDays.remove(day);
+                                }
+                              });
+                            },
+                          );
+                        }),
+                      ),
+                    ),
 
                   SizedBox(height: 10),
 
@@ -372,7 +444,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         time!.minute,
                       );
 
-                      final newTask = CallTask(controller.text, dt, snooze);
+                      final newTask = CallTask(
+                        controller.text,
+                        dt,
+                        0,
+                        repeatMode,
+                        customDays,
+                      );
 
                       setState(() {
                         if (existing == null) {
@@ -383,13 +461,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       });
 
                       saveTasks();
-                      triggerCall(newTask);
 
                       NotificationService.scheduleCall(
-                        id: DateTime.now().millisecondsSinceEpoch,
+                        id: DateTime.now().millisecondsSinceEpoch.remainder(
+                          100000,
+                        ),
                         title: "Callminder",
                         body: newTask.task,
                         scheduledTime: newTask.dateTime,
+                        payload: jsonEncode(newTask.toJson()),
                       );
 
                       Navigator.pop(context);
@@ -407,13 +487,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget taskCard(CallTask t, int i) {
+    String subtitle =
+        "${t.dateTime.toString().split(" ")[0]} • ${TimeOfDay.fromDateTime(t.dateTime).format(context)}";
+    if (t.repeatMode == 'daily') subtitle += " 🔄 Daily";
+    if (t.repeatMode == 'weekly') subtitle += " 🔄 Weekly";
+    if (t.repeatMode == 'custom') subtitle += " 🔄 Custom";
+
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       child: ListTile(
         title: Text(t.task, style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(
-          "${t.dateTime.toString().split(" ")[0]} • ${TimeOfDay.fromDateTime(t.dateTime).format(context)}",
-        ),
+        subtitle: Text(subtitle),
         leading: IconButton(
           icon: Icon(Icons.delete, color: Colors.redAccent),
           onPressed: () => deleteTask(i),
@@ -480,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onThemeChanged: widget.onThemeChanged,
                     ),
                   ),
-                );
+                ).then((_) => loadTasks());
               },
             ),
           ],
@@ -624,11 +708,74 @@ class _ProfilePageState extends State<ProfilePage> {
 
 // ================= SETTINGS =================
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   final bool isDarkMode;
   final Function(bool) onThemeChanged;
 
   SettingsPage({required this.isDarkMode, required this.onThemeChanged});
+
+  @override
+  _SettingsPageState createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  int defaultSnooze = 10;
+
+  @override
+  void initState() {
+    super.initState();
+    loadSettings();
+  }
+
+  void loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      defaultSnooze = prefs.getInt("default_snooze") ?? 10;
+    });
+  }
+
+  void _editSnoozeDuration() {
+    TextEditingController customController = TextEditingController(
+      text: defaultSnooze.toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Custom Snooze"),
+          content: TextField(
+            controller: customController,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: "Minutes",
+              hintText: "Enter exact minutes (e.g., 2, 45)",
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                int? newValue = int.tryParse(customController.text);
+                if (newValue != null && newValue > 0) {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setInt("default_snooze", newValue);
+                  setState(() {
+                    defaultSnooze = newValue;
+                  });
+                }
+                Navigator.pop(context);
+              },
+              child: Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -639,10 +786,17 @@ class SettingsPage extends StatelessWidget {
           SwitchListTile(
             title: Text("Dark Mode"),
             subtitle: Text("Toggle dark theme on or off"),
-            value: isDarkMode,
+            value: widget.isDarkMode,
             onChanged: (bool value) {
-              onThemeChanged(value);
+              widget.onThemeChanged(value);
             },
+          ),
+          Divider(),
+          ListTile(
+            title: Text("Default Snooze Duration"),
+            subtitle: Text("$defaultSnooze minutes added when snoozing"),
+            trailing: Icon(Icons.edit, color: Colors.blueAccent),
+            onTap: _editSnoozeDuration,
           ),
         ],
       ),

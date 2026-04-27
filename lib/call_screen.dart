@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'notification_service.dart';
+import 'main.dart'; // Import to use CallTask logic
 
 class CallScreen extends StatefulWidget {
-  final String task;
-  final int snoozeMinutes;
+  final String payload;
 
-  CallScreen({required this.task, required this.snoozeMinutes});
+  CallScreen({required this.payload});
 
   @override
   _CallScreenState createState() => _CallScreenState();
@@ -16,10 +18,14 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   final player = AudioPlayer();
   final tts = FlutterTts();
+  late CallTask currentTask;
 
   @override
   void initState() {
     super.initState();
+    // Decode the rules we packed inside main.dart
+    currentTask = CallTask.fromJson(jsonDecode(widget.payload));
+
     player.setReleaseMode(ReleaseMode.loop);
     player.play(AssetSource('ringtone.mp3'));
   }
@@ -31,62 +37,23 @@ class _CallScreenState extends State<CallScreen> {
     super.dispose();
   }
 
-  // Phase 4: Renamed from hangUpAndSnooze to just snoozeCall
   void snoozeCall() async {
     player.stop();
 
-    int selectedMinutes = widget.snoozeMinutes;
+    final prefs = await SharedPreferences.getInstance();
+    int snoozeDuration = prefs.getInt("default_snooze") ?? 10;
 
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text("Snooze Duration"),
-          content: StatefulBuilder(
-            builder: (context, setStateDialog) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("$selectedMinutes minutes"),
-                  Slider(
-                    value: selectedMinutes.toDouble(),
-                    min: 1,
-                    max: 60,
-                    divisions: 59,
-                    label: "$selectedMinutes",
-                    onChanged: (value) {
-                      setStateDialog(() {
-                        selectedMinutes = value.toInt();
-                      });
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: Text("Snooze"),
-            ),
-          ],
-        );
-      },
-    );
+    final newTime = DateTime.now().add(Duration(minutes: snoozeDuration));
 
-    final newTime = DateTime.now().add(Duration(minutes: selectedMinutes));
-
+    // THE SHADOW ALARM: Schedule a one-off native alarm for the snooze.
+    // We DO NOT update the main task in the SharedPreferences database.
+    // This perfectly protects your everyday routine!
     NotificationService.scheduleCall(
-      id: DateTime.now().millisecondsSinceEpoch,
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
       title: "Callminder (Snoozed)",
-      body: widget.task,
+      body: currentTask.task,
       scheduledTime: newTime,
+      payload: widget.payload, // Pass the exact same package back in
     );
 
     Navigator.pop(context);
@@ -94,7 +61,45 @@ class _CallScreenState extends State<CallScreen> {
 
   void acceptCall() async {
     player.stop();
-    await tts.speak("Hey, you still haven't ${widget.task}");
+    await tts.speak("Good job. Task completed.");
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      List<String> savedData = prefs.getStringList("tasks") ?? [];
+      List<CallTask> allTasks = savedData
+          .map((e) => CallTask.fromJson(jsonDecode(e)))
+          .toList();
+
+      // Find and remove the current version of the task
+      allTasks.removeWhere((t) => t.task == currentTask.task);
+
+      // If it repeats, rebuild it and put it back in!
+      if (currentTask.repeatMode != 'none') {
+        DateTime nextTime = currentTask.calculateNextTime();
+        currentTask.dateTime = nextTime;
+
+        allTasks.add(currentTask);
+
+        // Schedule the next master alarm
+        NotificationService.scheduleCall(
+          id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          title: "Callminder",
+          body: currentTask.task,
+          scheduledTime: nextTime,
+          payload: jsonEncode(currentTask.toJson()),
+        );
+      }
+
+      // Save the fresh database
+      await prefs.setStringList(
+        "tasks",
+        allTasks.map((e) => jsonEncode(e.toJson())).toList(),
+      );
+    } catch (e) {
+      print("Error processing task completion: $e");
+    }
+
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -115,7 +120,6 @@ class _CallScreenState extends State<CallScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // Phase 4: Button logic mapped to snoozeCall
               Column(
                 children: [
                   GestureDetector(
@@ -123,10 +127,7 @@ class _CallScreenState extends State<CallScreen> {
                     child: CircleAvatar(
                       radius: 35,
                       backgroundColor: Colors.red,
-                      child: Icon(
-                        Icons.snooze,
-                        color: Colors.white,
-                      ), // Changed icon to snooze
+                      child: Icon(Icons.snooze, color: Colors.white),
                     ),
                   ),
                   SizedBox(height: 8),
@@ -153,13 +154,7 @@ class _CallScreenState extends State<CallScreen> {
 
           SizedBox(height: 40),
 
-          ElevatedButton(
-            onPressed: () async {
-              await tts.speak("Good job. Task completed.");
-              Navigator.pop(context);
-            },
-            child: Text("Mark as Done"),
-          ),
+          ElevatedButton(onPressed: acceptCall, child: Text("Mark as Done")),
         ],
       ),
     );
