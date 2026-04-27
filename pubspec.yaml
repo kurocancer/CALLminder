@@ -10,7 +10,7 @@ environment:
   sdk: ^3.10.1
 
 dependencies:
-  flutter_background_service: any # Or latest
+  flutter_background_service: any
   path_provider: ^2.1.2
   flutter:
     sdk: flutter
@@ -21,6 +21,10 @@ dependencies:
   flutter_local_notifications: ^17.0.0
   timezone: ^0.9.4
   image_picker: ^1.0.7
+  wakelock_plus: ^1.2.8
+  google_generative_ai: ^0.4.0
+  speech_to_text: ^7.3.0
+  permission_handler: ^11.3.0
 
 dev_dependencies:
   flutter_test:

@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'call_screen.dart';
 import 'notification_service.dart';
 
@@ -12,7 +15,14 @@ import 'notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService.init();
+  try {
+    await NotificationService.init();
+    await WakelockPlus.enable();
+  } catch (e) {
+    print("Init error: $e");
+  }
+  runApp(RemindCallApp());
+}
 
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'call_channel',
@@ -73,6 +83,8 @@ class RemindCallApp extends StatefulWidget {
 class _RemindCallAppState extends State<RemindCallApp> {
   bool isDarkMode = false;
   String? userName;
+  DateTime? userDOB;
+  String? profileImagePath;
 
   @override
   void initState() {
@@ -80,13 +92,22 @@ class _RemindCallAppState extends State<RemindCallApp> {
     loadPreferences();
   }
 
-  void loadPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      userName = prefs.getString("username");
-      isDarkMode = prefs.getBool("isDarkMode") ?? false;
-    });
-  }
+void loadPreferences() async {
+  final prefs = await SharedPreferences.getInstance();
+  setState(() {
+    userName = prefs.getString("username");
+    isDarkMode = prefs.getBool("isDarkMode") ?? false;
+    String? dobStr = prefs.getString("dob");
+    if (dobStr != null) {
+      try {
+        userDOB = DateTime.parse(dobStr);
+      } catch (e) {
+        print("Error parsing DOB: $e");
+      }
+    }
+    profileImagePath = prefs.getString("profile_image");
+  });
+}
 
   void setUserName(String name) async {
     final prefs = await SharedPreferences.getInstance();
@@ -114,6 +135,7 @@ class _RemindCallAppState extends State<RemindCallApp> {
               isDarkMode: isDarkMode,
               onThemeChanged: toggleTheme,
               onNameChanged: setUserName,
+              profileImagePath: profileImagePath,
             ),
     );
   }
@@ -176,14 +198,18 @@ class CallTask {
   int snooze;
   String repeatMode;
   List<int> customDays;
+  int? notificationId;
+  String? details;
 
   CallTask(
     this.task,
     this.dateTime,
     this.snooze,
     this.repeatMode,
-    this.customDays,
-  );
+    this.customDays, {
+    this.notificationId,
+    this.details,
+  });
 
   Map<String, dynamic> toJson() => {
     "task": task,
@@ -191,6 +217,8 @@ class CallTask {
     "snooze": snooze,
     "repeatMode": repeatMode,
     "customDays": customDays,
+    "notificationId": notificationId,
+    "details": details,
   };
 
   factory CallTask.fromJson(Map<String, dynamic> json) {
@@ -200,6 +228,8 @@ class CallTask {
       json["snooze"] ?? 0,
       json["repeatMode"] ?? 'none',
       List<int>.from(json["customDays"] ?? []),
+      notificationId: json["notificationId"],
+      details: json["details"],
     );
   }
 
@@ -230,12 +260,14 @@ class HomeScreen extends StatefulWidget {
   final bool isDarkMode;
   final Function(bool) onThemeChanged;
   final Function(String) onNameChanged;
+  final String? profileImagePath;
 
   HomeScreen({
     required this.userName,
     required this.isDarkMode,
     required this.onThemeChanged,
     required this.onNameChanged,
+    this.profileImagePath,
   });
 
   @override
@@ -244,42 +276,67 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<CallTask> tasks = [];
-  String? profileImagePath;
+  StreamSubscription? _notificationSubscription;
 
   @override
   void initState() {
     super.initState();
     loadTasks();
-    loadProfileImage();
-    checkInitialLaunch(); // 🔥 THE FIX: Checks if the app was just woken up!
+    checkInitialLaunch();
+    _requestPermissions();
 
-    NotificationService.selectNotificationStream.stream.listen((
-      String? payload,
-    ) {
-      if (payload != null && mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => CallScreen(payload: payload)),
-        ).then((_) => loadTasks());
-      }
+    _notificationSubscription =
+        NotificationService.selectNotificationStream.stream.listen(
+      (NotificationResponse? response) {
+        if (response != null && response.payload != null && mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CallScreen(payload: response.payload!)),
+          ).then((_) => loadTasks());
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
+  }
     });
+  }
+
+  void _requestPermissions() async {
+    // Request microphone permission
+    var micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) {
+      micStatus = await Permission.microphone.request();
+    }
+
+    if (micStatus.isPermanentlyDenied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Microphone permission denied. Please enable in settings.'),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
+    }
+
+    // Request notification permission
+    await Permission.notification.request();
   }
 
   void checkInitialLaunch() async {
-    String? payload = await NotificationService.checkInitialLaunch();
-    if (payload != null && mounted) {
+    NotificationResponse? response = await NotificationService.checkInitialLaunch();
+    if (response != null && response.payload != null && mounted) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => CallScreen(payload: payload)),
+        MaterialPageRoute(builder: (_) => CallScreen(payload: response.payload!)),
       ).then((_) => loadTasks());
     }
-  }
-
-  void loadProfileImage() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      profileImagePath = prefs.getString("profile_image");
-    });
   }
 
   void saveTasks() async {
@@ -310,6 +367,9 @@ class _HomeScreenState extends State<HomeScreen> {
     TextEditingController controller = TextEditingController(
       text: existing?.task ?? "",
     );
+    TextEditingController detailsController = TextEditingController(
+      text: existing?.details ?? "",
+    );
 
     DateTime? date = existing?.dateTime;
     TimeOfDay? time = existing != null
@@ -338,6 +398,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   TextField(
                     controller: controller,
                     decoration: InputDecoration(labelText: "Task Name"),
+                  ),
+
+                  SizedBox(height: 10),
+
+                  TextField(
+                    controller: detailsController,
+                    decoration: InputDecoration(
+                      labelText: "Details (optional)",
+                      hintText: "Add any notes or details for the AI...",
+                    ),
+                    maxLines: 3,
                   ),
 
                   ListTile(
@@ -450,6 +521,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         0,
                         repeatMode,
                         customDays,
+                        details: detailsController.text.isNotEmpty
+                            ? detailsController.text
+                            : null,
                       );
 
                       setState(() {
@@ -462,15 +536,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       saveTasks();
 
-                      NotificationService.scheduleCall(
-                        id: DateTime.now().millisecondsSinceEpoch.remainder(
+                      int notificationId =
+                        DateTime.now().millisecondsSinceEpoch.remainder(
                           100000,
-                        ),
-                        title: "Callminder",
-                        body: newTask.task,
-                        scheduledTime: newTask.dateTime,
-                        payload: jsonEncode(newTask.toJson()),
-                      );
+                        );
+
+                    // Store notification ID in the task
+                    newTask.notificationId = notificationId;
+
+                    NotificationService.scheduleCall(
+                      id: notificationId,
+                      title: "Callminder",
+                      body: newTask.task,
+                      scheduledTime: newTask.dateTime,
+                      payload: jsonEncode(newTask.toJson()),
+                    );
 
                       Navigator.pop(context);
                     },
@@ -526,10 +606,12 @@ class _HomeScreenState extends State<HomeScreen> {
               accountName: Text(widget.userName),
               accountEmail: Text("Stay on track!"),
               currentAccountPicture: CircleAvatar(
-                backgroundImage: profileImagePath != null
-                    ? FileImage(File(profileImagePath!))
+                backgroundImage: widget.profileImagePath != null
+                    ? FileImage(File(widget.profileImagePath!))
                     : null,
-                child: profileImagePath == null ? Icon(Icons.person) : null,
+                child: widget.profileImagePath == null
+                    ? Icon(Icons.person)
+                    : null,
               ),
             ),
             ListTile(
@@ -544,7 +626,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       name: widget.userName,
                       onSave: (newName) {
                         widget.onNameChanged(newName);
-                        loadProfileImage();
                       },
                     ),
                   ),
@@ -647,7 +728,11 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     if (image != null) {
-      await prefs.setString("profile_image", image!.path);
+      // Copy image to app documents directory for persistence
+      final appDir = await getApplicationDocumentsDirectory();
+      final fileName = image!.path.split('/').last;
+      final savedImage = await image!.copy('${appDir.path}/$fileName');
+      await prefs.setString("profile_image", savedImage.path);
     }
 
     Navigator.pop(context);
@@ -720,11 +805,13 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int defaultSnooze = 10;
+  String? _apiKey;
 
   @override
   void initState() {
     super.initState();
     loadSettings();
+    _loadApiKey();
   }
 
   void loadSettings() async {
@@ -732,6 +819,59 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() {
       defaultSnooze = prefs.getInt("default_snooze") ?? 10;
     });
+  }
+
+  void _loadApiKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _apiKey = prefs.getString("gemini_api_key");
+      if (_apiKey == null || _apiKey!.isEmpty) {
+        _apiKey = "AIzaSyAB-ys0uexYtCcv514XKihkBCWizxwbjp4";
+        prefs.setString("gemini_api_key", _apiKey!);
+      }
+    });
+  }
+
+  void _saveApiKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("gemini_api_key", key);
+    setState(() => _apiKey = key);
+  }
+
+  void _editApiKey() {
+    TextEditingController controller = TextEditingController(
+      text: _apiKey ?? "",
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Gemini API Key"),
+          content: TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              hintText: "Enter API key",
+              border: OutlineInputBorder(),
+            ),
+            obscureText: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _saveApiKey(controller.text);
+                Navigator.pop(context);
+              },
+              child: Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _editSnoozeDuration() {
@@ -797,6 +937,17 @@ class _SettingsPageState extends State<SettingsPage> {
             subtitle: Text("$defaultSnooze minutes added when snoozing"),
             trailing: Icon(Icons.edit, color: Colors.blueAccent),
             onTap: _editSnoozeDuration,
+          ),
+          Divider(),
+          ListTile(
+            title: Text("Gemini API Key"),
+            subtitle: Text(
+              _apiKey == null || _apiKey!.isEmpty
+                  ? "Not set"
+                  : "••••••${_apiKey!.substring(_apiKey!.length - 4)}",
+            ),
+            trailing: Icon(Icons.edit, color: Colors.green),
+            onTap: _editApiKey,
           ),
         ],
       ),

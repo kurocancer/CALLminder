@@ -7,8 +7,8 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
-  static final StreamController<String?> selectNotificationStream =
-      StreamController<String?>.broadcast();
+static final StreamController<NotificationResponse?> selectNotificationStream =
+    StreamController<NotificationResponse?>.broadcast();
 
   static Future init() async {
     tz.initializeTimeZones();
@@ -26,9 +26,7 @@ class NotificationService {
     await _notifications.initialize(
       settings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        if (response.payload != null) {
-          selectNotificationStream.add(response.payload);
-        }
+        selectNotificationStream.add(response);
       },
     );
 
@@ -40,12 +38,12 @@ class NotificationService {
   }
 
   // 🔥 THE FIX: A method to check if the app was launched from a dead state by the alarm
-  static Future<String?> checkInitialLaunch() async {
+  static Future<NotificationResponse?> checkInitialLaunch() async {
     final NotificationAppLaunchDetails? details = await _notifications
         .getNotificationAppLaunchDetails();
 
     if (details != null && details.didNotificationLaunchApp) {
-      return details.notificationResponse?.payload;
+      return details.notificationResponse;
     }
     return null;
   }
@@ -57,32 +55,68 @@ class NotificationService {
     required DateTime scheduledTime,
     required String payload,
   }) async {
-    await _notifications.zonedSchedule(
-      id,
-      title,
-      body,
-      tz.TZDateTime.from(scheduledTime, tz.local),
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'call_channel',
-          'Call Channel',
-          channelDescription: 'Incoming call style notifications',
-          importance: Importance.max,
-          priority: Priority.high,
-          fullScreenIntent: true, // This is what wakes the phone from sleep!
-          category: AndroidNotificationCategory.call,
+    try {
+      await _notifications.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'call_channel',
+            'Call Channel',
+            channelDescription: 'Incoming call style notifications',
+            importance: Importance.max,
+            priority: Priority.high,
+            fullScreenIntent: true,
+            category: AndroidNotificationCategory.call,
+            ongoing: true,
+            autoCancel: false,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
+          ),
         ),
-        iOS: DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-          interruptionLevel: InterruptionLevel.timeSensitive,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+    } catch (e) {
+      print("Error scheduling with fullScreenIntent: $e");
+      // Fallback without full-screen intent
+      await _notifications.zonedSchedule(
+        id,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'call_channel',
+            'Call Channel',
+            channelDescription: 'Incoming call style notifications',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.timeSensitive,
+          ),
         ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      payload: payload,
-    );
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+    }
+  }
+
+  static Future cancelNotification(int id) async {
+    await _notifications.cancel(id);
   }
 }
