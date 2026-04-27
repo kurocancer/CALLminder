@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'notification_service.dart'; // ✅ ADDED
+import 'notification_service.dart';
 
 class CallScreen extends StatefulWidget {
   final String task;
@@ -20,7 +20,6 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void initState() {
     super.initState();
-
     player.setReleaseMode(ReleaseMode.loop);
     player.play(AssetSource('ringtone.mp3'));
   }
@@ -32,13 +31,12 @@ class _CallScreenState extends State<CallScreen> {
     super.dispose();
   }
 
-  // 🔴 RED BUTTON = SNOOZE (FIXED)
-  void hangUpAndSnooze() async {
+  // Phase 4: Renamed from hangUpAndSnooze to just snoozeCall
+  void snoozeCall() async {
     player.stop();
 
     int selectedMinutes = widget.snoozeMinutes;
 
-    // 🔥 ASK USER FOR SNOOZE TIME (1–60)
     await showDialog(
       context: context,
       builder: (context) {
@@ -84,7 +82,6 @@ class _CallScreenState extends State<CallScreen> {
 
     final newTime = DateTime.now().add(Duration(minutes: selectedMinutes));
 
-    // 🔥 RESCHEDULE
     NotificationService.scheduleCall(
       id: DateTime.now().millisecondsSinceEpoch,
       title: "Callminder (Snoozed)",
@@ -95,10 +92,8 @@ class _CallScreenState extends State<CallScreen> {
     Navigator.pop(context);
   }
 
-  // 🟢 GREEN BUTTON = ANSWER
   void acceptCall() async {
     player.stop();
-
     await tts.speak("Hey, you still haven't ${widget.task}");
   }
 
@@ -115,28 +110,43 @@ class _CallScreenState extends State<CallScreen> {
           ),
           SizedBox(height: 20),
           Text("Incoming Call...", style: TextStyle(color: Colors.grey)),
-
           SizedBox(height: 60),
 
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              GestureDetector(
-                onTap: hangUpAndSnooze,
-                child: CircleAvatar(
-                  radius: 35,
-                  backgroundColor: Colors.red,
-                  child: Icon(Icons.call_end, color: Colors.white),
-                ),
+              // Phase 4: Button logic mapped to snoozeCall
+              Column(
+                children: [
+                  GestureDetector(
+                    onTap: snoozeCall,
+                    child: CircleAvatar(
+                      radius: 35,
+                      backgroundColor: Colors.red,
+                      child: Icon(
+                        Icons.snooze,
+                        color: Colors.white,
+                      ), // Changed icon to snooze
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text("Snooze", style: TextStyle(color: Colors.white)),
+                ],
               ),
 
-              GestureDetector(
-                onTap: acceptCall,
-                child: CircleAvatar(
-                  radius: 35,
-                  backgroundColor: Colors.green,
-                  child: Icon(Icons.call, color: Colors.white),
-                ),
+              Column(
+                children: [
+                  GestureDetector(
+                    onTap: acceptCall,
+                    child: CircleAvatar(
+                      radius: 35,
+                      backgroundColor: Colors.green,
+                      child: Icon(Icons.call, color: Colors.white),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text("Answer", style: TextStyle(color: Colors.white)),
+                ],
               ),
             ],
           ),
@@ -148,7 +158,7 @@ class _CallScreenState extends State<CallScreen> {
               await tts.speak("Good job. Task completed.");
               Navigator.pop(context);
             },
-            child: Text("Done"),
+            child: Text("Mark as Done"),
           ),
         ],
       ),

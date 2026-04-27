@@ -1,15 +1,51 @@
-// SAME IMPORTS
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'call_screen.dart';
 import 'notification_service.dart';
+
 // ================= MAIN =================
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.init();
+  await initializeBackgroundService(); // Phase 1: Background Service Init
   runApp(RemindCallApp());
+}
+
+// Phase 1: Basic Background Service Setup
+Future<void> initializeBackgroundService() async {
+  final service = FlutterBackgroundService();
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      autoStart: true,
+      isForegroundMode: true,
+      notificationChannelId: 'call_channel',
+      initialNotificationTitle: 'Callminder is active',
+      initialNotificationContent:
+          'Running in background to ensure you never miss a task.',
+      foregroundServiceNotificationId: 888,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: true,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
+  );
+}
+
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  // Background logic goes here
+}
+
+@pragma('vm:entry-point')
+bool onIosBackground(ServiceInstance service) {
+  return true;
 }
 
 class RemindCallApp extends StatefulWidget {
@@ -18,18 +54,21 @@ class RemindCallApp extends StatefulWidget {
 }
 
 class _RemindCallAppState extends State<RemindCallApp> {
-  ThemeMode themeMode = ThemeMode.system;
+  bool isDarkMode = false; // Phase 2: Simplified to Light/Dark
   String? userName;
 
   @override
   void initState() {
     super.initState();
-    loadUser();
+    loadPreferences();
   }
 
-  void loadUser() async {
+  void loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => userName = prefs.getString("username"));
+    setState(() {
+      userName = prefs.getString("username");
+      isDarkMode = prefs.getBool("isDarkMode") ?? false;
+    });
   }
 
   void setUserName(String name) async {
@@ -38,22 +77,25 @@ class _RemindCallAppState extends State<RemindCallApp> {
     setState(() => userName = name);
   }
 
-  void changeTheme(ThemeMode mode) {
-    setState(() => themeMode = mode);
+  void toggleTheme(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool("isDarkMode", isDark);
+    setState(() => isDarkMode = isDark);
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      themeMode: themeMode,
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
       theme: ThemeData.light(),
       darkTheme: ThemeData.dark(),
       home: userName == null
           ? CreateProfileScreen(onSave: setUserName)
           : HomeScreen(
               userName: userName!,
-              onThemeChanged: changeTheme,
+              isDarkMode: isDarkMode,
+              onThemeChanged: toggleTheme,
               onNameChanged: setUserName,
             ),
     );
@@ -89,7 +131,10 @@ class CreateProfileScreen extends StatelessWidget {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 20),
-              TextField(controller: controller),
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(hintText: "Enter your name"),
+              ),
               SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () {
@@ -134,11 +179,13 @@ class CallTask {
 
 class HomeScreen extends StatefulWidget {
   final String userName;
-  final Function(ThemeMode) onThemeChanged;
+  final bool isDarkMode;
+  final Function(bool) onThemeChanged;
   final Function(String) onNameChanged;
 
   HomeScreen({
     required this.userName,
+    required this.isDarkMode,
     required this.onThemeChanged,
     required this.onNameChanged,
   });
@@ -149,11 +196,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<CallTask> tasks = [];
+  String? profileImagePath;
 
   @override
   void initState() {
     super.initState();
     loadTasks();
+    loadProfileImage();
+  }
+
+  void loadProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      profileImagePath = prefs.getString("profile_image");
+    });
   }
 
   void triggerCall(CallTask task) {
@@ -164,7 +220,6 @@ class _HomeScreenState extends State<HomeScreen> {
     Future.delayed(diff, () {
       if (!mounted) return;
 
-      // 🔥 REMOVE TASK AFTER TRIGGER
       setState(() {
         tasks.removeWhere(
           (t) => t.task == task.task && t.dateTime == task.dateTime,
@@ -173,7 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       saveTasks();
 
-      // 🔥 OPEN CALL SCREEN
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -226,11 +280,19 @@ class _HomeScreenState extends State<HomeScreen> {
         return StatefulBuilder(
           builder: (context, setStateSheet) {
             return Padding(
-              padding: EdgeInsets.all(20),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 20,
+                right: 20,
+                top: 20,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextField(controller: controller),
+                  TextField(
+                    controller: controller,
+                    decoration: InputDecoration(labelText: "Task Name"),
+                  ),
 
                   ListTile(
                     title: Text(
@@ -273,6 +335,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     onChanged: (v) => setStateSheet(() => snooze = v!),
                   ),
 
+                  SizedBox(height: 10),
+
                   ElevatedButton(
                     onPressed: () {
                       if (controller.text.isEmpty ||
@@ -299,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       });
 
                       saveTasks();
-
                       triggerCall(newTask);
 
                       NotificationService.scheduleCall(
@@ -311,8 +374,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       Navigator.pop(context);
                     },
-                    child: Text("Save"),
+                    child: Text("Save Task"),
                   ),
+                  SizedBox(height: 20),
                 ],
               ),
             );
@@ -324,18 +388,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget taskCard(CallTask t, int i) {
     return Card(
-      margin: EdgeInsets.all(10),
+      margin: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       child: ListTile(
-        title: Text(t.task),
+        title: Text(t.task, style: TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(
           "${t.dateTime.toString().split(" ")[0]} • ${TimeOfDay.fromDateTime(t.dateTime).format(context)}",
         ),
         leading: IconButton(
-          icon: Icon(Icons.delete, color: Colors.red),
+          icon: Icon(Icons.delete, color: Colors.redAccent),
           onPressed: () => deleteTask(i),
         ),
         trailing: IconButton(
-          icon: Icon(Icons.edit),
+          icon: Icon(Icons.edit, color: Colors.blueAccent),
           onPressed: () => openTaskEditor(existing: t, index: i),
         ),
         onTap: () => openTaskEditor(existing: t, index: i),
@@ -351,36 +415,50 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => openTaskEditor(),
         child: Icon(Icons.add),
       ),
-
       drawer: Drawer(
         child: Column(
           children: [
             UserAccountsDrawerHeader(
               accountName: Text(widget.userName),
-              accountEmail: Text(""),
+              accountEmail: Text("Stay on track!"),
+              currentAccountPicture: CircleAvatar(
+                backgroundImage: profileImagePath != null
+                    ? FileImage(File(profileImagePath!))
+                    : null,
+                child: profileImagePath == null ? Icon(Icons.person) : null,
+              ),
             ),
             ListTile(
+              leading: Icon(Icons.person),
               title: Text("Profile"),
               onTap: () {
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => ProfilePage(
                       name: widget.userName,
-                      onSave: widget.onNameChanged,
+                      onSave: (newName) {
+                        widget.onNameChanged(newName);
+                        loadProfileImage(); // Reload image after returning
+                      },
                     ),
                   ),
                 );
               },
             ),
             ListTile(
+              leading: Icon(Icons.settings),
               title: Text("Settings"),
               onTap: () {
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        SettingsPage(onThemeChanged: widget.onThemeChanged),
+                    builder: (_) => SettingsPage(
+                      isDarkMode: widget.isDarkMode,
+                      onThemeChanged: widget.onThemeChanged,
+                    ),
                   ),
                 );
               },
@@ -388,9 +466,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-
       body: tasks.isEmpty
-          ? Center(child: Text("No Callminders yet"))
+          ? Center(child: Text("No Callminders yet! Add one below."))
           : ListView.builder(
               itemCount: tasks.length,
               itemBuilder: (_, i) => taskCard(tasks[i], i),
@@ -420,11 +497,22 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     controller = TextEditingController(text: widget.name);
+    loadProfileData(); // Phase 3: Load on init
+  }
+
+  void loadProfileData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      String? savedDOB = prefs.getString("dob");
+      if (savedDOB != null) dob = DateTime.parse(savedDOB);
+
+      String? savedImagePath = prefs.getString("profile_image");
+      if (savedImagePath != null) image = File(savedImagePath);
+    });
   }
 
   Future pickImage() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-
     if (picked != null) {
       setState(() {
         image = File(picked.path);
@@ -445,25 +533,43 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  void saveProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Save Name
+    widget.onSave(controller.text);
+
+    // Phase 3: Save DOB
+    if (dob != null) {
+      await prefs.setString("dob", dob!.toIso8601String());
+    }
+
+    // Phase 3: Save Photo Path
+    // (Note: For long term persistence, copy picked.path to getApplicationDocumentsDirectory)
+    if (image != null) {
+      await prefs.setString("profile_image", image!.path);
+    }
+
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text("Profile")),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: EdgeInsets.all(20),
         child: Column(
           children: [
             GestureDetector(
               onTap: pickImage,
               child: CircleAvatar(
-                radius: 50,
+                radius: 60,
                 backgroundImage: image != null ? FileImage(image!) : null,
-                child: image == null ? Icon(Icons.camera_alt, size: 30) : null,
+                child: image == null ? Icon(Icons.camera_alt, size: 40) : null,
               ),
             ),
-
-            SizedBox(height: 20),
-
+            SizedBox(height: 30),
             TextField(
               controller: controller,
               decoration: InputDecoration(
@@ -471,27 +577,27 @@ class _ProfilePageState extends State<ProfilePage> {
                 border: OutlineInputBorder(),
               ),
             ),
-
             SizedBox(height: 20),
-
             ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(5),
+                side: BorderSide(color: Colors.grey.shade400),
+              ),
               title: Text(
                 dob == null
                     ? "Select Date of Birth"
-                    : dob.toString().split(" ")[0],
+                    : "DOB: ${dob.toString().split(" ")[0]}",
               ),
               trailing: Icon(Icons.calendar_today),
               onTap: pickDOB,
             ),
-
-            SizedBox(height: 20),
-
+            SizedBox(height: 40),
             ElevatedButton(
-              onPressed: () {
-                widget.onSave(controller.text);
-                Navigator.pop(context);
-              },
-              child: Text("Save"),
+              style: ElevatedButton.styleFrom(
+                minimumSize: Size(double.infinity, 50),
+              ),
+              onPressed: saveProfile,
+              child: Text("Save Profile", style: TextStyle(fontSize: 18)),
             ),
           ],
         ),
@@ -499,30 +605,29 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
+
 // ================= SETTINGS =================
 
 class SettingsPage extends StatelessWidget {
-  final Function(ThemeMode) onThemeChanged;
+  final bool isDarkMode;
+  final Function(bool) onThemeChanged;
 
-  SettingsPage({required this.onThemeChanged});
+  SettingsPage({required this.isDarkMode, required this.onThemeChanged});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text("Settings")),
-      body: Column(
+      body: ListView(
         children: [
-          ListTile(
-            title: Text("System Theme"),
-            onTap: () => onThemeChanged(ThemeMode.system),
-          ),
-          ListTile(
-            title: Text("Light Theme"),
-            onTap: () => onThemeChanged(ThemeMode.light),
-          ),
-          ListTile(
-            title: Text("Dark Theme"),
-            onTap: () => onThemeChanged(ThemeMode.dark),
+          // Phase 2: Theme Switch
+          SwitchListTile(
+            title: Text("Dark Mode"),
+            subtitle: Text("Toggle dark theme on or off"),
+            value: isDarkMode,
+            onChanged: (bool value) {
+              onThemeChanged(value);
+            },
           ),
         ],
       ),
