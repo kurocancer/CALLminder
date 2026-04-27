@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // Added for channel creation
 import 'call_screen.dart';
 import 'notification_service.dart';
 
@@ -12,7 +13,25 @@ import 'notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
-  await initializeBackgroundService(); // Phase 1: Background Service Init
+
+  // 🔥 THE FIX: Explicitly create the notification channel before starting the service
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'call_channel', // This matches the ID we use in the background service
+    'Call Channel',
+    description: 'Incoming call style notifications',
+    importance: Importance.max,
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.createNotificationChannel(channel);
+
+  await initializeBackgroundService();
   runApp(RemindCallApp());
 }
 
@@ -24,7 +43,8 @@ Future<void> initializeBackgroundService() async {
       onStart: onStart,
       autoStart: true,
       isForegroundMode: true,
-      notificationChannelId: 'call_channel',
+      notificationChannelId:
+          'call_channel', // It will now find the channel we just created!
       initialNotificationTitle: 'Callminder is active',
       initialNotificationContent:
           'Running in background to ensure you never miss a task.',
@@ -54,7 +74,7 @@ class RemindCallApp extends StatefulWidget {
 }
 
 class _RemindCallAppState extends State<RemindCallApp> {
-  bool isDarkMode = false; // Phase 2: Simplified to Light/Dark
+  bool isDarkMode = false;
   String? userName;
 
   @override
@@ -440,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       name: widget.userName,
                       onSave: (newName) {
                         widget.onNameChanged(newName);
-                        loadProfileImage(); // Reload image after returning
+                        loadProfileImage();
                       },
                     ),
                   ),
@@ -497,7 +517,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     controller = TextEditingController(text: widget.name);
-    loadProfileData(); // Phase 3: Load on init
+    loadProfileData();
   }
 
   void loadProfileData() async {
@@ -536,16 +556,12 @@ class _ProfilePageState extends State<ProfilePage> {
   void saveProfile() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Save Name
     widget.onSave(controller.text);
 
-    // Phase 3: Save DOB
     if (dob != null) {
       await prefs.setString("dob", dob!.toIso8601String());
     }
 
-    // Phase 3: Save Photo Path
-    // (Note: For long term persistence, copy picked.path to getApplicationDocumentsDirectory)
     if (image != null) {
       await prefs.setString("profile_image", image!.path);
     }
@@ -620,7 +636,6 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(title: Text("Settings")),
       body: ListView(
         children: [
-          // Phase 2: Theme Switch
           SwitchListTile(
             title: Text("Dark Mode"),
             subtitle: Text("Toggle dark theme on or off"),
