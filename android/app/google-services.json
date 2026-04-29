@@ -1,0 +1,53 @@
+{
+  "project_info": {
+    "project_number": "38453214981",
+    "project_id": "callminder-d8372",
+    "storage_bucket": "callminder-d8372.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38453214981:android:ae0d3aabc4b4541788016c",
+        "android_client_info": {
+          "package_name": "com.example.remindcall"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "38453214981-0.apps.googleusercontent.com",
+          "client_type": 3,
+          "android_info": {
+            "package_name": "com.example.remindcall"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAXL_tZa217xCYKi17im3d1MxQsOUVgSQI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38453214981:web:f5c32dd5d51bbb8288016c"
+      },
+      "oauth_client": [
+        {
+          "client_id": "38453214981-0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCRNbBYbVJtcSuJlJwRo4sXpxrR6-gTWRk"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,4 +1,5 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'dart:convert';
 
 class AIService {
   static const String _modelName = 'gemini-1.5-flash';
@@ -43,5 +44,15 @@ Reply with ONLY the ACTION line, nothing else.
 ''';
     final response = await _chat.sendMessage(Content.text(prompt));
     return response.text ?? "ACTION: UNCLEAR";
+  }
+
+  Future<String> processNaturalLanguage(String prompt) async {
+    try {
+      final response = await _model.generateContent([Content.text(prompt)]);
+      return response.text ?? "{}";
+    } catch (e) {
+      print("Natural language processing error: $e");
+      return "{}";
+    }
   }
 }

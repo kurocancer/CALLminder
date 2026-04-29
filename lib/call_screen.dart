@@ -7,7 +7,7 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:convert';
 import 'dart:async';
 import 'notification_service.dart';
-import 'main.dart';
+import 'models/call_task.dart';
 import 'ai_service.dart';
 
 class CallScreen extends StatefulWidget {
@@ -71,7 +71,7 @@ class _CallScreenState extends State<CallScreen> {
     } catch (_) {}
   }
 
-  void _loadApiKey() async {
+  Future<void> _loadApiKey() async {
     final prefs = await SharedPreferences.getInstance();
     _userName = prefs.getString("username");
     _geminiApiKey = prefs.getString("gemini_api_key");
@@ -86,7 +86,7 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
-  void _initializeTts() async {
+  Future<void> _initializeTts() async {
     try {
       await tts.awaitSpeakCompletion(true);
       var languages = await tts.getLanguages;
