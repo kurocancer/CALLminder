@@ -27,6 +27,18 @@ void main() async {
     print("Firebase initialization error: $e");
   }
 
+  // Check if app was launched from notification
+  String? initialRoute;
+  try {
+    final response = await NotificationService.checkInitialLaunch();
+    if (response != null) {
+      print("App launched from notification with payload: ${response.payload}");
+      initialRoute = '/call';
+    }
+  } catch (e) {
+    print("Error checking initial launch: $e");
+  }
+
   // Initialize notifications
   try {
     await NotificationService.init();
@@ -36,13 +48,14 @@ void main() async {
     print("Init error: $e");
   }
 
-  runApp(CallminderApp());
+  runApp(CallminderApp(initialRoute: initialRoute));
 }
 
 class CallminderApp extends StatelessWidget {
   final AuthService _authService = AuthService();
+  final String? initialRoute;
 
-  CallminderApp({super.key});
+  CallminderApp({this.initialRoute, super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +81,16 @@ class CallminderApp extends StatelessWidget {
           return SignInScreen();
         },
       ),
+      initialRoute: initialRoute,
+      onGenerateRoute: (settings) {
+        if (settings.name == '/call') {
+          final payload = settings.arguments as String?;
+          return MaterialPageRoute(
+            builder: (_) => CallScreen(payload: payload ?? ''),
+          );
+        }
+        return null;
+      },
     );
   }
 }

@@ -110,20 +110,150 @@ class _SquadScreenState extends State<SquadScreen> {
     super.dispose();
   }
 
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      backgroundColor: Color(0xFF1A1A1A),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Color(0xFF00D4FF)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, size: 40, color: Color(0xFF00D4FF)),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  AuthService().currentUser?.displayName ?? 'User',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+                Text(
+                  AuthService().currentUser?.email ?? '',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.person, color: Colors.white),
+            title: Text('User Profile', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.settings, color: Colors.white),
+            title: Text('Settings', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.security, color: Colors.white),
+            title: Text('App Permissions', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+          Divider(color: Colors.grey),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Sign Out', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              AuthService().signOut();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      backgroundColor: Color(0xFF1A1A1A),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Color(0xFF00D4FF)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, size: 40, color: Color(0xFF00D4FF)),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  AuthService().currentUser?.displayName ?? 'User',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+                Text(
+                  AuthService().currentUser?.email ?? '',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.person, color: Colors.white),
+            title: Text('User Profile', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.settings, color: Colors.white),
+            title: Text('Settings', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.notifications, color: Colors.white),
+            title: Text('Notification Settings', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationSettingsScreen()));
+            },
+          ),
+          Divider(color: Colors.grey),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Sign Out', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              AuthService().signOut();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0A0A0A),
+      drawer: _buildDrawer(context),
       appBar: AppBar(
-        title: Text('The Squad', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: Colors.white)),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu, color: Colors.white),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: Text('The Squad'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.logout, color: Colors.white),
-            onPressed: () => _authService.signOut(),
-          ),
-        ],
       ),
       body: Column(
         children: [

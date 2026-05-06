@@ -14,7 +14,7 @@ class AuthService {
     try {
       print("=== GOOGLE SIGN-IN START ===");
 
-      // Use Firebase Auth's Google provider directly
+      // Try signInWithProvider first (recommended for Android)
       GoogleAuthProvider googleProvider = GoogleAuthProvider();
       googleProvider.addScope('email');
       googleProvider.addScope('profile');
@@ -33,17 +33,14 @@ class AuthService {
         print("Email: ${user.email}");
         print("Display Name: ${user.displayName}");
         await _createOrUpdateUserProfile(user);
+        return user;
       } else {
         print("ERROR: Firebase user is null after sign-in");
+        return null;
       }
-
-      print("=== GOOGLE SIGN-IN END ===");
-      return user;
-    } catch (e, stackTrace) {
+    } catch (e) {
       print("=== GOOGLE SIGN-IN ERROR ===");
       print("Error: $e");
-      print("Stack trace: $stackTrace");
-      print("===========================");
       return null;
     }
   }
@@ -51,12 +48,10 @@ class AuthService {
   Future<void> _createOrUpdateUserProfile(User user) async {
     try {
       final userDoc = _firestore.collection('users').doc(user.uid);
-
       final docSnapshot = await userDoc.get();
 
       if (!docSnapshot.exists) {
         print("Creating new user profile for ${user.uid}");
-
         final userProfile = UserProfile(
           uid: user.uid,
           name: user.displayName ?? 'User',
@@ -67,11 +62,16 @@ class AuthService {
           sentRequests: [],
           createdAt: DateTime.now(),
         );
-
         await userDoc.set(userProfile.toJson());
         print("User profile created successfully");
       } else {
         print("User profile already exists");
+        // Update basic info
+        await userDoc.update({
+          'name': user.displayName ?? 'User',
+          'email': user.email ?? '',
+          'photoUrl': user.photoURL,
+        });
       }
     } catch (e) {
       print("Error creating/updating user profile: $e");

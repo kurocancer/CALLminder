@@ -14,11 +14,16 @@
       },
       "oauth_client": [
         {
-          "client_id": "38453214981-0.apps.googleusercontent.com",
-          "client_type": 3,
+          "client_id": "38453214981-vf6tg435urnlufc5fhu648dgocrpftl2.apps.googleusercontent.com",
+          "client_type": 1,
           "android_info": {
-            "package_name": "com.example.remindcall"
+            "package_name": "com.example.remindcall",
+            "certificate_hash": "7e84ed2b7e34af0cac44df4ce315d15d85cdb7c8"
           }
+        },
+        {
+          "client_id": "38453214981-knp3ki7k2tibs07f7i8nhvlfmsmi8t1b.apps.googleusercontent.com",
+          "client_type": 3
         }
       ],
       "api_key": [
@@ -28,25 +33,21 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "38453214981-knp3ki7k2tibs07f7i8nhvlfmsmi8t1b.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "38453214981-v2us409v5sg7uofuo2c9ghv9o7v78cgn.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.remindcall"
+              }
+            }
+          ]
         }
       }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:38453214981:web:f5c32dd5d51bbb8288016c"
-      },
-      "oauth_client": [
-        {
-          "client_id": "38453214981-0.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCRNbBYbVJtcSuJlJwRo4sXpxrR6-gTWRk"
-        }
-      ]
     }
   ],
   "configuration_version": "1"

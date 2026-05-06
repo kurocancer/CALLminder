@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/call_task.dart';
 import '../notification_service.dart';
 import '../services/auth_service.dart';
-import '../screens/ai_creator.dart';
+import 'classic_callminder_form.dart';
+import '../services/firestore_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -48,10 +49,96 @@ class _HomeDashboardState extends State<HomeDashboard> {
     );
   }
 
+  Widget _buildDrawer(BuildContext context) {
+    return Drawer(
+      backgroundColor: Color(0xFF1A1A1A),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Color(0xFF00D4FF)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Colors.white,
+                  child: Icon(Icons.person, size: 40, color: Color(0xFF00D4FF)),
+                ),
+                SizedBox(height: 10),
+                Text(
+                  AuthService().currentUser?.displayName ?? 'User',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+                Text(
+                  AuthService().currentUser?.email ?? '',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.person, color: Colors.white),
+            title: Text('User Profile', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.settings, color: Colors.white),
+            title: Text('Settings', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.notifications, color: Colors.white),
+            title: Text('Notification Settings', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationSettingsScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.security, color: Colors.white),
+            title: Text('App Permissions', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              // Open app permissions
+            },
+          ),
+          Divider(color: Colors.grey),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text('Sign Out', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              Navigator.pop(context);
+              AuthService().signOut();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0A0A0A),
+      drawer: _buildDrawer(context),
+      appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu, color: Colors.white),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: Text('CALLMINDER'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: Column(
         children: [
           Container(
@@ -125,49 +212,49 @@ class _HomeDashboardState extends State<HomeDashboard> {
           ),
         ],
       ),
-        floatingActionButton: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingActionButton(
-              onPressed: () async {
-                // Test notification in 10 seconds
-                final testTask = CallTask(
-                  "Test Task",
-                  DateTime.now().add(Duration(seconds: 10)),
-                  0,
-                  "none",
-                  [],
-                  details: "This is a test",
-                );
-                await NotificationService.scheduleCall(
-                  id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
-                  title: "CALLMINDER TEST",
-                  body: "Test notification",
-                  scheduledTime: DateTime.now().add(Duration(seconds: 10)),
-                  payload: jsonEncode(testTask.toJson()),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Test notification in 10 seconds')),
-                );
-              },
-              backgroundColor: Colors.green,
-              child: Icon(Icons.notifications_active),
-              heroTag: "test_notif",
-            ),
-            SizedBox(height: 10),
-            FloatingActionButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => AICreator()),
-                ).then((_) => _loadTasks());
-              },
-              backgroundColor: Color(0xFF00D4FF),
-              child: Icon(Icons.add),
-              heroTag: "add_task",
-            ),
-          ],
-        ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            onPressed: () async {
+              // Test notification in 10 seconds
+              final testTask = CallTask(
+                "Test Task",
+                DateTime.now().add(Duration(seconds: 10)),
+                0,
+                "none",
+                [],
+                details: "This is a test",
+              );
+              await NotificationService.scheduleCall(
+                id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+                title: "CALLMINDER TEST",
+                body: "Test notification",
+                scheduledTime: DateTime.now().add(Duration(seconds: 10)),
+                payload: jsonEncode(testTask.toJson()),
+              );
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Test notification in 10 seconds')),
+              );
+            },
+            backgroundColor: Colors.green,
+            child: Icon(Icons.notifications_active),
+            heroTag: "test_notif",
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ClassicCallminderForm()),
+              ).then((_) => _loadTasks());
+            },
+            backgroundColor: Color(0xFF00D4FF),
+            child: Icon(Icons.add),
+            heroTag: "add_task",
+          ),
+        ],
+      ),
     );
   }
 }
